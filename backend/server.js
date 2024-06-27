@@ -1,106 +1,83 @@
 const express = require('express');
-const cors = require('cors');
 const multer = require('multer');
-const mongoose = require('mongoose');
-const aws = require('aws-sdk');
-const ffmpeg = require('fluent-ffmpeg');
+const AWS = require('aws-sdk');
 const fs = require('fs');
-const { Readable } = require('stream');
+const path = require('path');
+const ffmpeg = require('fluent-ffmpeg');
+
+require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const upload = multer({ dest: 'uploads/' });
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// MongoDB Setup
-mongoose.connect('mongodb://localhost:27017/uploadApp', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
-const FileSchema = new mongoose.Schema({
-  title: String,
-  description: String,
-  filename: String,
-  metadata: Object,
-  s3Key: String,
-});
-
-const File = mongoose.model('File', FileSchema);
-
-// AWS S3 Setup
-const s3 = new aws.S3({
+AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   region: process.env.AWS_REGION,
 });
 
-const upload = multer({ dest: 'uploads/' });
+const s3 = new AWS.S3();
 
-// Helper function to get file duration
-const getFileDuration = (filePath) => {
+const compressVideo = (inputPath, outputPath) => {
   return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err) return reject(err);
-      const duration = metadata.format.duration;
-      resolve(duration);
-    });
+    ffmpeg(inputPath)
+      .outputOptions('-vcodec libx264')
+      .outputOptions('-crf 28')
+      .save(outputPath)
+      .on('end', () => {
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        reject(err);
+      });
   });
 };
 
-// Endpoint for file upload
 app.post('/upload', upload.single('file'), async (req, res) => {
-  const filePath = req.file.path;
   const { title, description } = req.body;
+  const file = req.file;
+
+  const inputFilePath = path.join(__dirname, file.path);
+  const outputFilePath = path.join(__dirname, 'compressed_' + file.filename + path.extname(file.originalname));
 
   try {
-    const duration = await getFileDuration(filePath);
+    // Compress the video
+    await compressVideo(inputFilePath, outputFilePath);
 
-    if (duration > 1800) { // 30 minutes in seconds
-      fs.unlinkSync(filePath);
-      return res.status(400).json({ message: 'File duration exceeds 30 minutes' });
-    }
-
-    const fileStream = fs.createReadStream(filePath);
-    const uploadParams = {
+    // Upload the compressed video to S3
+    const fileContent = fs.readFileSync(outputFilePath);
+    const params = {
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: req.file.filename,
-      Body: fileStream,
+      Key: `uploads/${Date.now()}_${file.originalname}`,
+      Body: fileContent,
+      ContentType: file.mimetype,
     };
 
-    const s3Data = await s3.upload(uploadParams).promise();
+    const data = await s3.upload(params).promise();
 
-    const newFile = new File({
+    // Delete the local files
+    fs.unlinkSync(inputFilePath);
+    fs.unlinkSync(outputFilePath);
+
+    // Save metadata to database (assuming you have a MongoDB setup)
+    const newFile = {
       title,
       description,
-      filename: req.file.originalname,
-      metadata: req.file,
-      s3Key: s3Data.Key,
-    });
+      s3Key: data.Key,
+      s3Url: data.Location,
+      uploadDate: new Date(),
+    };
 
-    await newFile.save();
+    // Save newFile to your MongoDB collection (implement this part)
 
-    res.status(200).json({ message: 'File uploaded successfully', file: newFile });
-
-    fs.unlinkSync(filePath);
+    res.status(200).json({ message: 'File uploaded and compressed successfully', file: newFile });
   } catch (error) {
-    fs.unlinkSync(filePath);
+    console.error('Error uploading file', error);
     res.status(500).json({ message: 'Error uploading file', error });
   }
 });
 
-// Endpoint to get uploaded files
-app.get('/files', async (req, res) => {
-  try {
-    const files = await File.find({});
-    res.status(200).json(files);
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching files', error });
-  }
-});
-
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
