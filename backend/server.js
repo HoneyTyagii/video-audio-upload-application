@@ -4,10 +4,26 @@ const AWS = require('aws-sdk');
 const fs = require('fs');
 const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
-
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// MongoDB setup
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+
+// Define a schema for uploaded files
+const fileSchema = new mongoose.Schema({
+  title: String,
+  description: String,
+  s3Key: String,
+  s3Url: String,
+  uploadDate: Date,
+});
+const File = mongoose.model('File', fileSchema);
+
 const upload = multer({ dest: 'uploads/' });
 
 AWS.config.update({
@@ -25,9 +41,11 @@ const compressVideo = (inputPath, outputPath) => {
       .outputOptions('-crf 28')
       .save(outputPath)
       .on('end', () => {
+        console.log('Video compression finished');
         resolve(outputPath);
       })
       .on('error', (err) => {
+        console.error('Error during video compression', err);
         reject(err);
       });
   });
@@ -42,9 +60,11 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
   try {
     // Compress the video
+    console.log('Starting video compression');
     await compressVideo(inputFilePath, outputFilePath);
 
     // Upload the compressed video to S3
+    console.log('Uploading compressed video to S3');
     const fileContent = fs.readFileSync(outputFilePath);
     const params = {
       Bucket: process.env.S3_BUCKET_NAME,
@@ -59,21 +79,30 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     fs.unlinkSync(inputFilePath);
     fs.unlinkSync(outputFilePath);
 
-    // Save metadata to database (assuming you have a MongoDB setup)
-    const newFile = {
+    // Save metadata to MongoDB
+    const newFile = new File({
       title,
       description,
       s3Key: data.Key,
       s3Url: data.Location,
       uploadDate: new Date(),
-    };
+    });
 
-    // Save newFile to your MongoDB collection (implement this part)
+    await newFile.save();
 
     res.status(200).json({ message: 'File uploaded and compressed successfully', file: newFile });
   } catch (error) {
     console.error('Error uploading file', error);
     res.status(500).json({ message: 'Error uploading file', error });
+  }
+});
+
+app.get('/files', async (req, res) => {
+  try {
+    const files = await File.find();
+    res.status(200).json(files);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching files', error });
   }
 });
 
