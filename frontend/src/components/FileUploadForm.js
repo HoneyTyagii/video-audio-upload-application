@@ -7,6 +7,7 @@ const FileUploadForm = () => {
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [progress, setProgress] = useState(0);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -14,18 +15,31 @@ const FileUploadForm = () => {
 
   const handleUpload = async (e) => {
     e.preventDefault();
+    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('title', title);
     formData.append('description', description);
 
     try {
-      const response = await axios.post('http://localhost:5000/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          console.log(Math.round((progressEvent.loaded / progressEvent.total) * 100));
+      const config = {
+        headers: {
+          'Content-Type': 'multipart/form-data',
         },
-      });
+        onUploadProgress: (progressEvent) => {
+          const progressPercent = Math.round(
+            (progressEvent.loaded / progressEvent.total) * 100
+          );
+          setProgress(progressPercent);
+        },
+      };
+
+      await axios.post('/upload', formData, config);
+
+      setFile(null);
+      setTitle('');
+      setDescription('');
+      setProgress(0);
 
       toast.success('File uploaded successfully!');
     } catch (error) {
@@ -84,6 +98,17 @@ const FileUploadForm = () => {
           Upload
         </button>
       </form>
+      {progress > 0 && (
+        <div className="mt-4">
+          <h3 className="text-lg font-semibold">Progress: {progress}%</h3>
+          <div className="w-full h-2 bg-gray-200 mt-2">
+            <div
+              className="bg-blue-500 h-full"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
       <ToastContainer />
     </div>
   );
