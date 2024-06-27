@@ -10,7 +10,7 @@ This application allows users to upload video and audio files to an AWS S3 serve
 
 2. **MongoDB**: Install MongoDB locally or use MongoDB Atlas. Download MongoDB from [mongodb.com](https://www.mongodb.com/).
 
-3. **AWS Account**: Sign up for an AWS account if you don't have one already. Configure AWS S3 to store uploaded files. Get your AWS access keys.
+3. **AWS Account**: Sign in to the AWS Management Console: Go to [AWS Management Console](https://aws.amazon.com/console/). suppose you don't have one already. Configure AWS S3 to store uploaded files. Get your AWS Access Key ID and Secret Access Key. 
 
 ### Backend Setup
 
