@@ -1,8 +1,9 @@
 import React from 'react';
-import FileUploadForm from './components/FileUploadForm';
-import FileList from './components/FileList';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+
+import FileUploadForm from './components/FileUploadForm';
+import FileList from './components/FileList';
 
 function App() {
   return (
